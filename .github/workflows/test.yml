@@ -1,0 +1,49 @@
+# Copyright (c) 2018 JSONx
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# You should have received a copy of The MIT License (MIT) along with this
+# program. If not, see <http://opensource.org/licenses/MIT/>.
+
+name: test
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Test
+      run: |
+        BUILD_DIR="build/validate"
+        mkdir -p $BUILD_DIR
+        ARTIFACT_ID="sax"
+        VERSION="0.9.5-SNAPSHOT"
+        CLASSIFIER="bundle"
+        JAR="$ARTIFACT_ID-$VERSION-$CLASSIFIER.jar"
+        DOWNLOAD_ROOT="https://oss.sonatype.org/content/repositories/snapshots/org/openjax/xml/sax/$VERSION/"
+        METADATA_XML="maven-metadata.xml"
+        curl -s -o "$BUILD_DIR/$METADATA_XML" -z "$BUILD_DIR/$METADATA_XML" "$DOWNLOAD_ROOT$METADATA_XML"
+        METADATA=$(cat $BUILD_DIR/$METADATA_XML | tr '\n' ' ')
+        TIMESTAMP=$(echo $METADATA | sed -e 's/^.*<timestamp>//' -e 's/<\/timestamp>.*//')
+        BUILD_NUMBER=$(echo $METADATA | sed -e 's/^.*<buildNumber>//' -e 's/<\/buildNumber>.*//')
+        DOWNLOAD_FILE="$ARTIFACT_ID-$(echo $VERSION | sed 's/\-SNAPSHOT//')-$TIMESTAMP-$BUILD_NUMBER-$CLASSIFIER.jar"
+        curl -s -o "$BUILD_DIR/$JAR" -z "$BUILD_DIR/$JAR" "$DOWNLOAD_ROOT$DOWNLOAD_FILE"
+        set +e
+        for FILE in schema-*/*.jsdx examples/*.jsdx; do
+          echo "Validating $FILE"
+          RESULT=$(java -cp $BUILD_DIR/$JAR org.openjax.xml.sax.Validator "$FILE" 2>&1);
+          echo $RESULT | grep 'Error\|Exception' > /dev/null;
+          ERROR=$?;
+          echo "$RESULT";
+          [ $ERROR -eq 0 ] && >&2 echo "[ERROR]" && exit 1;
+        done; exit 0
